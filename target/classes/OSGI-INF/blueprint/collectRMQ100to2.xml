@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>      
+  <blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xmlns:cm="http://aries.apache.org/blueprint/xmlns/blueprint-cm/v1.0.0"
+           xsi:schemaLocation="
+             http://www.osgi.org/xmlns/blueprint/v1.0.0
+               http://www.osgi.org/xmlns/blueprint/v1.0.0/blueprint.xsd">  
+	<!-- *************** OSGI blueprint property placeholder************ -->
+
+	<cm:property-placeholder id="placeholder" persistent-id="geotab.getmessage">
+    <cm:default-properties>
+     
+ <!--deploy   
+      
+      <cm:property name="Partner.url" value="jdbc:sqlserver://DEV3\DEV;databaseName=PartnerIntegration"/>
+      <cm:property name="Partner.username" value="sa"/>
+      <cm:property name="Partner.password" value="BSMwireless1"/>
+-->  
+      <cm:property name="Partner.url" value="jdbc:sqlserver://server2016:1433;databaseName=PartnerIntegration"/>
+      <cm:property name="Partner.username" value="sa"/>
+      <cm:property name="Partner.password" value="Password123"/> 
+     </cm:default-properties>
+	</cm:property-placeholder>
+	
+	<!-- *************** POJO Beans ************************************** -->
+	
+	<bean id="msghelper" class="bsm.kmq.devicedata.msgHelper"/>
+	
+	<!-- *************** Camel Context for Application ********************-->
+	
+  <camelContext trace="false" xmlns="http://camel.apache.org/schema/blueprint">
+  <propertyPlaceholder location="classpath:KMQ.properties" id="property1"/>
+  <route shutdownRoute="Default">
+    <from uri="kafka:{{kmq.kafkahost}}:{{kmq.kafkaport}}?topic={{kmq.topic}}&amp;zookeeperHost={{kmq.zookeeperHost}}&amp;zookeeperPort={{kmq.zookeeperPort}}&amp;groupId={{kmq.groupid}}" id="Kafka MQ">
+      <description/>
+    </from>
+    <bean ref="msghelper" method="Save_QueueDataToHeader" id="Convert Msg"/>
+    <log message="[Header:KMQ_QUEUE_DATA]${in.header.KMQ_QUEUE_DATA}" loggingLevel="INFO" id="List KMQ_QEUEUE_DATA"/>
+    <multicast>
+      <pipeline id="Pipe for Probe">
+        <to uri="sqlPartner:{{sql.getPROBE}}" id="PROBE get Params from db"/>
+        <bean ref="msghelper" method="Assemble_HttpPostByPROBE" id="PROBE prepare"/>
+        <recipientList onPrepareRef="msghelper" id="Post PROBE JSON">
+          <simple>${in.header.HTTP_RECEPIENT_LIST}</simple>
+        </recipientList>
+        <bean id="PROBE Result"/>
+        <log message="[#PROBE Result:]${body}" loggingLevel="INFO"/>
+      </pipeline>
+      <pipeline id="Pipe for xfcd">
+        <to uri="sqlPartner:{{sql.getXFCD}}" id="XFCD get Params from db"/>
+        <bean id="XFCD verification"/>
+        <recipientList onPrepareRef="msghelper" id="call XFCD verification">
+          <simple>${in.header.HTTP_RECEPIENT_LIST}</simple>
+        </recipientList>
+        <bean id="XFCD prepare"/>
+        <recipientList onPrepareRef="msghelper" id="Post XFCD JSON">
+          <simple>${in.header.HTTP_RECEPIENT_LIST}</simple>
+        </recipientList>
+        <bean id="XFCD Result"/>
+        <log message="[P2]${body}\n${in.header.RMQ_QUEUE_DATA}" loggingLevel="INFO"/>
+      </pipeline>
+    </multicast>
+  </route>
+</camelContext>
+
+</blueprint>
